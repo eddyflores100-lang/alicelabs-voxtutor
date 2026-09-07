@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  // standalone solo para el runner local (bun); en Vercel el builder propio no lo admite
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
   typescript: {
     ignoreBuildErrors: true,
   },
