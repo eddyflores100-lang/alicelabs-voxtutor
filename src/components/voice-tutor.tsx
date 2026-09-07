@@ -48,7 +48,8 @@ export default function VoiceTutor() {
     async (text: string) => {
       const clean = text.trim();
       if (!clean) return;
-      setMessages((m) => [...m, { role: 'user', text: clean }]);
+      const isKickoff = clean === '[start]';
+      if (!isKickoff) setMessages((m) => [...m, { role: 'user', text: clean }]);
       setThinking(true);
       try {
         const res = await fetch('/api/chat', {
