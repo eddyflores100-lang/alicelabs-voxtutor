@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  title     String    @default("Sesión de práctica")
+  createdAt DateTime  @default(now())
+  messages  Message[]
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role        String // "user" | "tutor"
+  content     String
+  corrections String? // JSON: [{wrong,right,note}]
+  createdAt   DateTime @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+model Memory {
+  id        String   @id @default(cuid())
+  key       String   @unique // ej: "name", "job", "goal", "common_errors"
+  value     String
+  updatedAt DateTime @updatedAt
+}
