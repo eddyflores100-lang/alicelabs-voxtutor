@@ -27,6 +27,7 @@ export type TutorState = {
   memory: MemoryEntry[]; // desc por updatedAt
   history: StoredMessage[]; // asc (cronológico), últimos 10
   stage: number;
+  meta: Record<string, string>; // valores crudos (JSON en string): streak, scenario, tavily, diagnosis
 };
 
 const EC_ID = process.env.EDGE_CONFIG_ID ?? '';
@@ -40,6 +41,7 @@ export const storeEnabled = Boolean(EC_ID && EC_TOKEN);
 type LocalStore = {
   msgs: Map<string, StoredMessage>;
   mem: Map<string, MemoryEntry>;
+  meta: Map<string, string>;
   stages: Map<string, number>;
   sessions: Set<string>;
 };
@@ -47,6 +49,7 @@ const g = globalThis as unknown as { __voxtutorLocal?: LocalStore };
 const local: LocalStore = (g.__voxtutorLocal ??= {
   msgs: new Map(),
   mem: new Map(),
+  meta: new Map(),
   stages: new Map(),
   sessions: new Set(),
 });
@@ -127,6 +130,9 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
         : [],
       history,
       stage: sessionId ? local.stages.get(sessionId) ?? 0 : 0,
+      meta: sid
+        ? Object.fromEntries([...local.meta.entries()].filter(([k]) => k.startsWith(`meta_${sid}_`)).map(([k, v]) => [k.slice(5 + sid.length + 1), v]))
+        : {},
     };
   }
 
@@ -140,15 +146,19 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
   }
   const memory: MemoryEntry[] = [];
   const allMsgs: StoredMessage[] = [];
+  const meta: Record<string, string> = {};
   let stage = 0;
   let exists = false;
 
+  const metaPrefix = sid ? `meta_${sid}_` : '';
   for (const it of items) {
     if (sid && it.key.startsWith(`mem_${sid}_`)) {
       try {
         const m = JSON.parse(it.value) as { v: string; t: number };
         memory.push({ key: it.key.slice(4 + sid.length + 1), value: m.v, updatedAt: m.t ?? 0 });
       } catch {}
+    } else if (sid && it.key.startsWith(metaPrefix)) {
+      meta[it.key.slice(metaPrefix.length)] = it.value;
     } else if (it.key.startsWith('msg_')) {
       const m = parseMsg(it.key, it.value);
       if (m) allMsgs.push(m);
@@ -166,7 +176,7 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
     .sort((a, b) => a.createdAt - b.createdAt)
     .slice(-10);
 
-  return { exists, memory: memory.slice(0, 20), history, stage };
+  return { exists, memory: memory.slice(0, 20), history, stage, meta };
 }
 
 /* ---------- Sesiones ---------- */
@@ -197,8 +207,9 @@ export async function saveTurn(opts: {
   tutorReply: string;
   corrections: Array<{ wrong: string; right: string; note: string }>;
   memoryUpdates: Array<{ key: string; value: string }>;
+  meta?: Record<string, unknown>; // streak, scenario, caché tavily, etc.
 }): Promise<void> {
-  const { sessionId, stage, userText, tutorReply, corrections, memoryUpdates } = opts;
+  const { sessionId, stage, userText, tutorReply, corrections, memoryUpdates, meta } = opts;
   const now = Date.now();
   const sid = sanitize(sessionId);
 
@@ -216,6 +227,9 @@ export async function saveTurn(opts: {
     });
     for (const u of memoryUpdates) {
       local.mem.set(`mem_${sid}_${sanitize(u.key)}`, { key: u.key, value: u.value, updatedAt: now });
+    }
+    for (const [k, v] of Object.entries(meta ?? {})) {
+      local.meta.set(`meta_${sid}_${sanitize(k)}`, JSON.stringify(v));
     }
     return;
   }
@@ -249,6 +263,14 @@ export async function saveTurn(opts: {
     });
   }
 
+  for (const [k, v] of Object.entries(meta ?? {})) {
+    items.push({
+      key: `meta_${sid}_${sanitize(k).slice(0, 64)}`,
+      value: JSON.stringify(v).slice(0, 3000),
+      operation: 'upsert',
+    });
+  }
+
   try {
     // Poda: mantener máx 30 mensajes por sesión (borra los más viejos en el mismo batch)
     const all = await ecReadAll();
@@ -264,6 +286,30 @@ export async function saveTurn(opts: {
   } catch (e) {
     // El chat NUNCA debe fallar por storage; solo se pierde la persistencia
     console.warn('[store] escritura Edge Config falló, turno no persistido:', e);
+  }
+}
+
+/* ---------- Meta independiente (diagnóstico, streak, etc. sin turno de chat) ---------- */
+
+export async function saveMeta(sessionId: string, entries: Record<string, unknown>): Promise<void> {
+  const sid = sidOf(sessionId);
+  if (!sid) return;
+  if (!storeEnabled) {
+    for (const [k, v] of Object.entries(entries)) {
+      local.meta.set(`meta_${sid}_${sanitize(k)}`, JSON.stringify(v));
+    }
+    return;
+  }
+  try {
+    await ecPatch(
+      Object.entries(entries).map(([k, v]) => ({
+        key: `meta_${sid}_${sanitize(k).slice(0, 64)}`,
+        value: JSON.stringify(v).slice(0, 3000),
+        operation: 'upsert',
+      }))
+    );
+  } catch (e) {
+    console.warn('[store] meta no persistido:', e);
   }
 }
 

@@ -26,19 +26,27 @@ Most language apps start from zero every single day. VoxTutor doesn't: the persi
 
 ## ✨ What makes it different
 
-- **End-to-end voice** — speak with your mic (Web Speech API: `SpeechRecognition`) and the tutor answers out loud (`speechSynthesis` TTS). No keyboard needed; a text-input fallback keeps the app usable in browsers without speech support.
-- **Live corrections without breaking the flow** — one grammar fix per turn, explained kindly in the learner's native language, delivered as a readable card in the UI.
+- **End-to-end voice** — speak with your mic (Web Speech API: `SpeechRecognition`) and the tutor answers out loud (`speechSynthesis` TTS), with adjustable speaking speed (0.8× beginner / 1× / 1.2× challenge), replay-audio on every correction, and a live audio-wave visualizer. A text-input fallback keeps the app usable in browsers without speech support.
+- **Practice scenarios** — one click switches the tutor between **Job Interview** (behavioral questions, STAR method, salary negotiation), **Travel & Daily Life** (airport, hotel, emergencies roleplay), **Tech Daily Standup** (yesterday/today/blockers) and free conversation. A real employability trainer, not a generic chatbot.
+- **Live corrections without breaking the flow** — one grammar fix per turn, explained kindly in the learner's native language, delivered as a readable card with a replay-pronunciation button.
+- **Deep CEFR diagnosis (multi-model routing)** — everyday voice turns run on a fast model; a "CEFR Diagnosis" button sends the full session history to a deep reasoning model that classifies the CEFR level, extracts recurring error patterns and builds a 4-week personalized study roadmap.
+- **Progress panel & exportable study note** — live CEFR level, session metrics (turns, words, corrections, practice streak), interactive error list with "Practice this error now" buttons, and a one-click Markdown study-note export for offline review.
+- **Real-world context via Tavily Search** — when the student mentions a real company ("an interview at Amazon") or a real city ("traveling to London"), VoxTutor performs a **live web search with the Tavily API** and injects current, real-world facts into the tutor's context, so practice uses today's reality instead of generic examples.
 - **Persistent, per-browser memory** — everything the tutor learns (name, goal, interests, common errors) is stored server-side (Vercel Edge Config in production) and re-injected into future sessions. Each browser gets an anonymous session id in `localStorage`, so different users never see each other's data — clear your storage and you start fresh.
 - **CEFR-aware teaching method** — the tutor adapts its vocabulary to the student's level and deliberately reintroduces past mistakes in new contexts.
 - **Provider-agnostic LLM layer** — built to run on **NVIDIA Nemotron** served by **Nebius Token Factory**, with an offline heuristic tutor as a zero-key fallback so anyone can clone and run the demo instantly.
 
 ## ⚡ Runs on Nebius Token Factory (NVIDIA Nemotron)
 
-This project makes a **runtime call to the Nebius Token Factory inference API**, as required by the hackathon rules:
+This project makes a **runtime call to the Nebius Token Factory inference API**, as required by the hackathon rules — with **dual-model routing**, the exact architecture NVIDIA/Nebius recommend:
+
+| Layer | Model (default) | Purpose |
+|---|---|---|
+| **Fast Voice Layer** | `nvidia/llama-3.3-nemotron-super-49b-v1` | Every voice turn — low latency so the conversation feels live |
+| **Deep Diagnostic Layer** | `nvidia/llama-3.1-nemotron-ultra-253b-v1` | On-demand CEFR diagnosis: deep reasoning over the full session history |
 
 - **Endpoint:** `POST https://api.tokenfactory.nebius.com/v1/chat/completions`
-- **Model:** `nvidia/llama-3.3-nemotron-super-49b-v1` (open source)
-- **Integration:** [`src/lib/llm.ts`](src/lib/llm.ts) — plain `fetch` call with `NEBIUS_API_KEY` auth, invoked on every chat turn by `/api/chat`
+- **Integration:** [`src/lib/llm.ts`](src/lib/llm.ts) — plain `fetch` call with `NEBIUS_API_KEY` auth; both models are overridable via `NEBIUS_MODEL_FAST` / `NEBIUS_MODEL_DEEP`
 - **Structured output:** the system prompt (in [`src/lib/tutor.ts`](src/lib/tutor.ts)) forces Nemotron to answer with a strict JSON contract, parsed and defensively validated server-side:
 
 ```json
@@ -57,16 +65,20 @@ This project makes a **runtime call to the Nebius Token Factory inference API**,
 
 ```
 Browser (native ASR/TTS via Web Speech API)
-        │  text
+        │  text + scenario
         ▼
-/api/chat ──► NVIDIA Nemotron (Nebius Token Factory) ──► strict JSON
-        │         or local heuristic fallback               │ reply
-        ▼                                                   │ corrections
-Vercel Edge Config                                          │ memoryUpdates
-(persistent, per-browser student memory) ◄──────────────────┘
+/api/chat ──► Nemotron SUPER (fast voice layer) ◄── Tavily Search (real-world context)
+        │                                                │ interview @ company
+        │                                                │ travel to city
+        ▼                                                ▼
+/api/diagnosis ──► Nemotron ULTRA (deep reasoning)   web snippets
+        │             CEFR level · error patterns        │
+        ▼             4-week roadmap                     │
+Vercel Edge Config ◄────────────────────────────────────┘
+(persistent, per-browser student memory)
 ```
 
-One read per turn (memory + history + stage) and one batched write per turn (messages + memory upserts + stage), with automatic pruning (max 30 messages per session) to stay well within quotas. If the store is unreachable, the chat never fails — it just skips persistence for that turn.
+One read per turn (memory + history + stage + meta) and one batched write per turn (messages + memory upserts + stage + meta), with automatic pruning (max 30 messages per session) to stay well within quotas. If the store is unreachable, the chat never fails — it just skips persistence for that turn.
 
 ## 🚀 Run it locally
 
@@ -94,8 +106,10 @@ npm start
 | Variable | Purpose |
 |---|---|
 | `NEBIUS_API_KEY` | Enables full NVIDIA Nemotron responses via Nebius Token Factory |
+| `NEBIUS_MODEL_FAST` | Fast voice layer model (default `nvidia/llama-3.3-nemotron-super-49b-v1`) |
+| `NEBIUS_MODEL_DEEP` | Deep diagnostic model (default `nvidia/llama-3.1-nemotron-ultra-253b-v1`) |
 | `NEBIUS_BASE_URL` | Defaults to `https://api.tokenfactory.nebius.com/v1` |
-| `NEBIUS_MODEL` | Defaults to `nvidia/llama-3.3-nemotron-super-49b-v1` |
+| `TAVILY_API_KEY` | Real-world context via Tavily Search (companies/cities); optional |
 | `EDGE_CONFIG_ID` / `EDGE_CONFIG_TOKEN` / `EDGE_CONFIG_TEAM_ID` | Persistent memory via Vercel Edge Config (otherwise in-memory) |
 
 Without any variables, the app runs in demo mode with local memory — nothing to configure, nothing to pay.
@@ -107,16 +121,19 @@ Without any variables, the app runs in demo mode with local memory — nothing t
 ```
 src/
 ├── app/
-│   ├── api/chat/route.ts    # Conversation turn (strict JSON contract)
-│   ├── api/memory/route.ts  # Persistent student memory (per browser)
-│   └── layout.tsx           # AliceLabs metadata
-├── components/voice-tutor.tsx  # Full UI (voice, chat, memory panel)
+│   ├── api/chat/route.ts       # Conversation turn (strict JSON contract)
+│   ├── api/diagnosis/route.ts  # Deep CEFR diagnosis endpoint
+│   ├── api/memory/route.ts     # Persistent student memory (per browser)
+│   └── layout.tsx              # AliceLabs metadata
+├── components/voice-tutor.tsx  # Full UI (scenarios, voice, progress panel)
 ├── lib/
-│   ├── llm.ts               # NVIDIA Nemotron via Nebius Token Factory
-│   ├── tutor-local.ts       # Offline heuristic tutor (zero-key fallback)
-│   ├── store.ts             # Storage: Vercel Edge Config / in-memory
-│   └── tutor.ts             # System prompt + teaching method
-└── types/speech.ts          # Web Speech API typings
+│   ├── llm.ts                  # Dual-model routing: Nemotron Super (fast) + Ultra (deep)
+│   ├── tavily.ts               # Tavily Search client (real-world context)
+│   ├── diagnose.ts             # CEFR diagnosis (deep or local heuristic)
+│   ├── tutor-local.ts          # Offline heuristic tutor + scenario banks
+│   ├── store.ts                # Storage: Vercel Edge Config / in-memory
+│   └── tutor.ts                # System prompt + teaching method
+└── types/speech.ts             # Web Speech API typings
 ```
 
 ## 🏆 Context

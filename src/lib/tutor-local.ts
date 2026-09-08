@@ -32,20 +32,74 @@ const NAME_BLOCK = new Set([
 const GOAL_PATTERNS: Array<[RegExp, string]> = [
   [/\b(work|job|jobs|business|office|boss|company|interview|employ\w*)\b/i, 'mejorar su inglés para el trabajo'],
   [/\b(travel|trip|vacation|airport|abroad|tourist)\b/i, 'viajar'],
+  [/\btravel(?:ing|ling)? to ([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)?)\b/, 'viajar a $1'],
   [/\b(exam|exams|toefl|ielts|test|university|school|college)\b/i, 'un examen o sus estudios'],
   [/\b(friend|friends|family|girlfriend|boyfriend|partner|wife|husband)\b/i, 'hablar con amigos o familia'],
   [/\b(music|movies|series|games|youtube)\b/i, 'su entretenimiento en inglés'],
 ];
 
-const PROMPTS = [
-  'What did you do yesterday?',
-  'Tell me about your job or your studies.',
-  'What are your plans for the weekend?',
-  'Describe your best friend to me.',
-  'What do you usually do in the morning?',
-  'What kind of music do you like, and why?',
-  'If you could travel anywhere, where would you go?',
-];
+/* ---------- Escenarios de práctica ---------- */
+
+export type Scenario = 'free' | 'interview' | 'travel' | 'standup';
+
+export const SCENARIOS: Record<Scenario, { label: string; ack: string; prompts: string[] }> = {
+  free: {
+    label: 'Free talk',
+    ack: "Let's keep chatting!",
+    prompts: [
+      'What did you do yesterday?',
+      'Tell me about your job or your studies.',
+      'What are your plans for the weekend?',
+      'Describe your best friend to me.',
+      'What do you usually do in the morning?',
+      'What kind of music do you like, and why?',
+      'If you could travel anywhere, where would you go?',
+    ],
+  },
+  interview: {
+    label: 'Job interview',
+    ack: "Great — mock job interview mode! I'll be your interviewer.",
+    prompts: [
+      'Tell me about yourself and your professional background.',
+      'Tell me about a time you faced a tight deadline. Use the STAR method: Situation, Task, Action, Result.',
+      'Why do you want to work with us?',
+      'What is your greatest professional strength, and how have you used it?',
+      'Describe a conflict with a coworker and how you solved it.',
+      'Where do you see yourself in five years?',
+      'Walk me through how you would negotiate your salary.',
+    ],
+  },
+  travel: {
+    label: 'Travel & daily life',
+    ack: "Travel mode! Let's practice real situations abroad.",
+    prompts: [
+      "You are at the airport and your flight is delayed. What do you say to the agent?",
+      'Order breakfast at a hotel restaurant and ask what they recommend.',
+      'Ask a stranger for directions to the train station, politely.',
+      'Your hotel room is too noisy. Complain politely and ask for a change.',
+      'You want to buy a metro pass. Ask about prices and schedules.',
+      'You lost your wallet in a busy market. Explain it to a police officer and ask for help.',
+      'Book a taxi by phone: say where you are and where you need to go.',
+    ],
+  },
+  standup: {
+    label: 'Tech standup',
+    ack: "Tech standup mode! You are in the daily meeting with your English-speaking team.",
+    prompts: [
+      'What did you work on yesterday? Give a quick update.',
+      'What are you working on today?',
+      'Any blockers? Explain the technical problem you are facing.',
+      'Explain a bug you fixed recently: what was wrong and how did you fix it?',
+      'Give an update on your current project: progress, next steps, and risks.',
+      'Your deploy failed in production. Explain the situation to your team lead.',
+      'Propose a new feature to your team and justify why it matters.',
+    ],
+  },
+};
+
+export function isScenario(v: unknown): v is Scenario {
+  return v === 'free' || v === 'interview' || v === 'travel' || v === 'standup';
+}
 
 const REACT = ['Nice!', 'Interesting!', 'Good!', 'I see.', 'Great!', 'Cool!', 'That makes sense.'];
 
@@ -90,7 +144,11 @@ function detectName(text: string, memory: MemoryEntry[], stage: number): string 
 function detectGoal(text: string, memory: MemoryEntry[]): string | null {
   if (memory.find((m) => m.key === 'goal')) return null;
   for (const [re, label] of GOAL_PATTERNS) {
-    if (re.test(text)) return label;
+    const m = text.match(re);
+    if (m) {
+      // El label puede traer $1 (ej: "viajar a $1") → sustituir por el grupo capturado
+      return label.replace(/\$(\d)/g, (_, d) => m[Number(d)] ?? '');
+    }
   }
   return null;
 }
@@ -111,10 +169,12 @@ function findCorrection(text: string): { wrong: string; right: string; note: str
 export function localTutorTurn(
   text: string,
   memory: MemoryEntry[],
-  stage: number
+  stage: number,
+  scenario: Scenario = 'free'
 ): TutorTurn {
   const isKickoff = text.trim() === '[start]';
-  const clean = isKickoff ? '' : text.trim();
+  const isScenarioSwitch = text.trim() === '[scenario]';
+  const clean = isKickoff || isScenarioSwitch ? '' : text.trim();
   const name = memory.find((m) => m.key === 'name')?.value ?? null;
   const goal = memory.find((m) => m.key === 'goal')?.value ?? null;
 
@@ -127,13 +187,47 @@ export function localTutorTurn(
   if (isKickoff) {
     if (name) {
       reply = goal
-        ? `Welcome back, ${name}! Last time you told me you want ${goal}. ${PROMPTS[stage % PROMPTS.length]}`
-        : `Welcome back, ${name}! ${PROMPTS[stage % PROMPTS.length]}`;
-      nextStage = stage + 1;
+        ? `Welcome back, ${name}! Last time you told me you want ${goal}. ${SCENARIOS[scenario].prompts[stage % SCENARIOS[scenario].prompts.length]}`
+        : `Welcome back, ${name}! ${SCENARIOS[scenario].prompts[stage % SCENARIOS[scenario].prompts.length]}`;
+      nextStage = Math.max(stage + 1, 3);
     } else {
       reply = "Hello! I'm VoxTutor, your personal English tutor. What's your name?";
       nextStage = 1;
     }
+    return { reply, corrections, memoryUpdates, nextStage };
+  }
+
+  /* Cambio de escenario (token interno [scenario], oculto en la UI) */
+  if (isScenarioSwitch) {
+    const sc = SCENARIOS[scenario];
+    if (scenario !== 'free' && stage >= 2) {
+      reply = `${sc.ack} ${sc.prompts[0]}`;
+      nextStage = 3;
+    } else if (scenario !== 'free') {
+      reply = `${sc.ack} First things first: what's your name?`;
+      nextStage = 1;
+    } else {
+      reply = `Back to free conversation, ${name ?? 'friend'}! ${sc.prompts[stage % sc.prompts.length]}`;
+      nextStage = Math.max(stage, 3);
+    }
+    return { reply, corrections, memoryUpdates, nextStage };
+  }
+
+  /* Solicitud de práctica de un error concreto (botón "Practicar este error") */
+  const practiceMatch = clean.match(/^i want to practice:?\s*["“]?(.+?)["”]?$/i);
+  if (practiceMatch) {
+    const fragment = practiceMatch[1].trim();
+    const known = memory.find((m) => m.key === 'common_errors')?.value ?? '';
+    const pair = known
+      .split(';')
+      .map((p) => p.split('->').map((s) => s.trim()))
+      .find(([wrong]) => wrong.toLowerCase().includes(fragment.toLowerCase()) || fragment.toLowerCase().includes(wrong.toLowerCase()));
+    if (pair) {
+      reply = `Let's fix that one! The correct form is "${pair[1]}". Now say a full sentence using it.`;
+    } else {
+      reply = `Sure! Try answering this one: ${SCENARIOS[scenario].prompts[(stage + 1) % SCENARIOS[scenario].prompts.length]}`;
+    }
+    nextStage = stage + 1;
     return { reply, corrections, memoryUpdates, nextStage };
   }
 
@@ -160,19 +254,21 @@ export function localTutorTurn(
   } else if (stage === 2) {
     // Esperando el objetivo
     if (newGoal) {
-      reply = `That's a great reason to practice, ${effName ?? 'friend'}! Let's start easy: ${PROMPTS[0]}`;
+      reply = `That's a great reason to practice, ${effName ?? 'friend'}! Let's start easy: ${SCENARIOS[scenario].prompts[0]}`;
     } else {
-      reply = `No problem! Let's practice anyway, ${effName ?? 'friend'}: ${PROMPTS[0]}`;
+      reply = `No problem! Let's practice anyway, ${effName ?? 'friend'}: ${SCENARIOS[scenario].prompts[0]}`;
     }
     nextStage = 3;
   } else {
-    // Práctica libre
+    // Práctica libre (banco de prompts del escenario activo)
+    const bank = SCENARIOS[scenario].prompts;
     const react = REACT[(stage + clean.length) % REACT.length];
-    const prompt = PROMPTS[(stage - 3 + 1) % PROMPTS.length];
+    const reactWord = react.replace(/[!.]$/, '');
+    const prompt = bank[(stage - 3 + 1) % bank.length];
     const personal = effName ? `, ${effName}` : '';
     reply = corr
       ? `${react} Small fix${personal}: you wrote it, now say it right — "${corr.right}". Next: ${prompt}`
-      : `${react}${personal}! ${prompt}`;
+      : `${reactWord}${personal}! ${prompt}`;
     nextStage = stage + 1;
   }
 
