@@ -115,7 +115,14 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
     };
   }
 
-  const items = await ecReadAll();
+  let items: Array<{ key: string; value: string; updatedAt?: number }>;
+  try {
+    items = await ecReadAll();
+  } catch (e) {
+    // Degradación elegante: si Edge Config no responde, la app sigue (sin memoria persistida)
+    console.warn('[store] lectura Edge Config falló, modo degradado:', e);
+    items = [];
+  }
   const memory: MemoryEntry[] = [];
   const allMsgs: StoredMessage[] = [];
   let stage = 0;
@@ -159,7 +166,11 @@ export async function createSession(id: string): Promise<void> {
     local.stages.set(id, 0);
     return;
   }
-  await ecPatch([{ key: `sess_${sanitize(id)}`, value: JSON.stringify({ stage: 0, ts: Date.now() }), operation: 'upsert' }]);
+  try {
+    await ecPatch([{ key: `sess_${sanitize(id)}`, value: JSON.stringify({ stage: 0, ts: Date.now() }), operation: 'upsert' }]);
+  } catch (e) {
+    console.warn('[store] no se pudo crear sesión persistente:', e);
+  }
 }
 
 /* ---------- Guardar el turno completo (1 sola escritura batch) ---------- */
@@ -223,17 +234,22 @@ export async function saveTurn(opts: {
     });
   }
 
-  // Poda: mantener máx 30 mensajes por sesión (borra los más viejos en el mismo batch)
-  const all = await ecReadAll();
-  const sessionMsgs = all
-    .filter((i) => i.key.startsWith(`msg_${sid}_`))
-    .sort((a, b) => a.key.localeCompare(b.key));
-  const excess = sessionMsgs.length + (userText ? 2 : 1) - 30;
-  for (let i = 0; i < Math.min(excess, 10); i++) {
-    items.push({ key: sessionMsgs[i].key, operation: 'delete' });
-  }
+  try {
+    // Poda: mantener máx 30 mensajes por sesión (borra los más viejos en el mismo batch)
+    const all = await ecReadAll();
+    const sessionMsgs = all
+      .filter((i) => i.key.startsWith(`msg_${sid}_`))
+      .sort((a, b) => a.key.localeCompare(b.key));
+    const excess = sessionMsgs.length + (userText ? 2 : 1) - 30;
+    for (let i = 0; i < Math.min(excess, 10); i++) {
+      items.push({ key: sessionMsgs[i].key, operation: 'delete' });
+    }
 
-  await ecPatch(items);
+    await ecPatch(items);
+  } catch (e) {
+    // El chat NUNCA debe fallar por storage; solo se pierde la persistencia
+    console.warn('[store] escritura Edge Config falló, turno no persistido:', e);
+  }
 }
 
 /* ---------- Memoria (para /api/memory) ---------- */
@@ -242,7 +258,13 @@ export async function getMemory(): Promise<MemoryEntry[]> {
   if (!storeEnabled) {
     return [...local.mem.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   }
-  const items = await ecReadAll();
+  let items: Array<{ key: string; value: string; updatedAt?: number }>;
+  try {
+    items = await ecReadAll();
+  } catch (e) {
+    console.warn('[store] lectura de memoria falló:', e);
+    items = [];
+  }
   const memory: MemoryEntry[] = [];
   for (const it of items) {
     if (!it.key.startsWith('mem_')) continue;
