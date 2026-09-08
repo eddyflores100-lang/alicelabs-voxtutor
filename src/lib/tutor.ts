@@ -1,5 +1,3 @@
-import type { ChatMsg } from './llm';
-
 export function tutorSystemPrompt(memory: { key: string; value: string }[]): string {
   const mem = memory.length
     ? memory.map((m) => `- ${m.key}: ${m.value}`).join('\n')
@@ -29,10 +27,4 @@ FORMATO DE SALIDA: responde SOLO un JSON válido, sin texto extra:
 Reglas: corrections puede ser [] si no hubo errores relevantes. memoryUpdates solo con datos
 nuevos o actualizados (nunca repitas lo que ya está en memoria).`;
 }
-
-export function firstUserMessage(): ChatMsg {
-  return {
-    role: 'user',
-    content: '(El estudiante acaba de abrir la app. Salúdalo en inglés simple, preséntate en una frase y pregúntale su nombre y para qué quiere mejorar su inglés.)',
-  };
-}
+// NOTA: la instrucción de kickoff vive inline en /api/chat (único lugar que la usa).

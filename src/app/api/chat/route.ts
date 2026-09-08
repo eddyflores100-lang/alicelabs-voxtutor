@@ -15,9 +15,13 @@ export async function POST(req: NextRequest) {
     // 1. Estado (memoria + historial + etapa) con UNA lectura
     const state = await loadState(sessionId);
 
-    // 2. Sesión
-    let id = sessionId as string | undefined;
-    if (!id || !state.exists) {
+    // 2. Sesión: el cliente manda un id estable (localStorage → memoria por navegador);
+    //    solo generamos uno nuevo si falta o es inválido.
+    const clientSid = typeof sessionId === 'string' ? sessionId.trim() : '';
+    let id: string;
+    if (/^[a-zA-Z0-9_-]{6,64}$/.test(clientSid)) {
+      id = clientSid;
+    } else {
       id = newSessionId();
       await createSession(id);
     }

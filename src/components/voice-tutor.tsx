@@ -30,7 +30,8 @@ export default function VoiceTutor() {
 
   const refreshMemory = useCallback(async () => {
     try {
-      const r = await fetch('/api/memory');
+      const sid = typeof window !== 'undefined' ? localStorage.getItem('voxtutor_sid') ?? '' : '';
+      const r = await fetch(`/api/memory?sessionId=${encodeURIComponent(sid)}`);
       const j = await r.json();
       setMemory(j.memory ?? []);
     } catch {}
@@ -46,7 +47,7 @@ export default function VoiceTutor() {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, sidOverride?: string) => {
       const clean = text.trim();
       if (!clean) return;
       const isKickoff = clean === '[start]';
@@ -56,7 +57,7 @@ export default function VoiceTutor() {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, text: clean }),
+          body: JSON.stringify({ sessionId: sidOverride ?? sessionId, text: clean }),
         });
         const j = await res.json();
         if (j.sessionId) setSessionId(j.sessionId);
@@ -75,9 +76,25 @@ export default function VoiceTutor() {
     [sessionId, autoSpeak, speak, refreshMemory]
   );
 
-  // Kickoff: saludo inicial del tutor
+  // Kickoff: id estable por navegador (localStorage) → memoria aislada por usuario y persistente
   useEffect(() => {
-    send('[start]');
+    let sid = '';
+    try {
+      sid = localStorage.getItem('voxtutor_sid') ?? '';
+    } catch {}
+    if (!/^[a-zA-Z0-9_-]{6,64}$/.test(sid)) {
+      sid =
+        'vt_' +
+        (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
+      try {
+        localStorage.setItem('voxtutor_sid', sid);
+      } catch {}
+    }
+    setSessionId(sid);
+    send('[start]', sid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

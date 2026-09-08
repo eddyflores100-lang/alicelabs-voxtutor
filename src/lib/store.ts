@@ -83,6 +83,14 @@ function sanitize(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
 }
 
+const SID_RE = /^[a-zA-Z0-9_-]{6,64}$/;
+
+/** Valida el sessionId que llega del cliente (id estable por navegador). */
+function sidOf(sessionId?: string): string | null {
+  const s = (sessionId ?? '').trim();
+  return SID_RE.test(s) ? s : null;
+}
+
 function parseMsg(key: string, value: string): StoredMessage | null {
   try {
     const j = JSON.parse(value) as Omit<StoredMessage, 'id'> & { t?: number };
@@ -102,6 +110,7 @@ function parseMsg(key: string, value: string): StoredMessage | null {
 /* ---------- Estado por turno (1 sola lectura) ---------- */
 
 export async function loadState(sessionId?: string): Promise<TutorState> {
+  const sid = sidOf(sessionId);
   if (!storeEnabled) {
     const history = [...local.msgs.values()]
       .filter((m) => m.sessionId === sessionId)
@@ -109,7 +118,13 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
       .slice(-10);
     return {
       exists: sessionId ? local.sessions.has(sessionId) : false,
-      memory: [...local.mem.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 20),
+      memory: sid
+        ? [...local.mem.entries()]
+            .filter(([k]) => k.startsWith(`mem_${sid}_`))
+            .map(([, m]) => m)
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .slice(0, 20)
+        : [],
       history,
       stage: sessionId ? local.stages.get(sessionId) ?? 0 : 0,
     };
@@ -129,10 +144,10 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
   let exists = false;
 
   for (const it of items) {
-    if (it.key.startsWith('mem_')) {
+    if (sid && it.key.startsWith(`mem_${sid}_`)) {
       try {
         const m = JSON.parse(it.value) as { v: string; t: number };
-        memory.push({ key: it.key.slice(4), value: m.v, updatedAt: m.t ?? 0 });
+        memory.push({ key: it.key.slice(4 + sid.length + 1), value: m.v, updatedAt: m.t ?? 0 });
       } catch {}
     } else if (it.key.startsWith('msg_')) {
       const m = parseMsg(it.key, it.value);
@@ -200,7 +215,7 @@ export async function saveTurn(opts: {
       corrections: corrections.length ? JSON.stringify(corrections.slice(0, 2)) : null, createdAt: now + 1,
     });
     for (const u of memoryUpdates) {
-      local.mem.set(`mem_${sanitize(u.key)}`, { key: u.key, value: u.value, updatedAt: now });
+      local.mem.set(`mem_${sid}_${sanitize(u.key)}`, { key: u.key, value: u.value, updatedAt: now });
     }
     return;
   }
@@ -228,7 +243,7 @@ export async function saveTurn(opts: {
   for (const u of memoryUpdates) {
     if (!u.key || !u.value) continue;
     items.push({
-      key: `mem_${sanitize(u.key)}`,
+      key: `mem_${sid}_${sanitize(u.key).slice(0, 64)}`,
       value: JSON.stringify({ v: String(u.value).slice(0, 200), t: now }),
       operation: 'upsert',
     });
@@ -254,9 +269,14 @@ export async function saveTurn(opts: {
 
 /* ---------- Memoria (para /api/memory) ---------- */
 
-export async function getMemory(): Promise<MemoryEntry[]> {
+export async function getMemory(sessionId?: string): Promise<MemoryEntry[]> {
+  const sid = sidOf(sessionId);
+  if (!sid) return [];
   if (!storeEnabled) {
-    return [...local.mem.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...local.mem.entries()]
+      .filter(([k]) => k.startsWith(`mem_${sid}_`))
+      .map(([, m]) => m)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   }
   let items: Array<{ key: string; value: string; updatedAt?: number }>;
   try {
@@ -267,10 +287,10 @@ export async function getMemory(): Promise<MemoryEntry[]> {
   }
   const memory: MemoryEntry[] = [];
   for (const it of items) {
-    if (!it.key.startsWith('mem_')) continue;
+    if (!it.key.startsWith(`mem_${sid}_`)) continue;
     try {
       const m = JSON.parse(it.value) as { v: string; t: number };
-      memory.push({ key: it.key.slice(4), value: m.v, updatedAt: m.t ?? 0 });
+      memory.push({ key: it.key.slice(4 + sid.length + 1), value: m.v, updatedAt: m.t ?? 0 });
     } catch {}
   }
   return memory.sort((a, b) => b.updatedAt - a.updatedAt);

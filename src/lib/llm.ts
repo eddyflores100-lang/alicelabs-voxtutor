@@ -5,7 +5,7 @@
  * - Sin clave: la ruta /api/chat usa el tutor heurístico local (tutor-local.ts).
  */
 
-type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };
+export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };
 
 const NEBIUS_BASE = process.env.NEBIUS_BASE_URL ?? 'https://api.tokenfactory.nebius.com/v1';
 const NEBIUS_MODEL = process.env.NEBIUS_MODEL ?? 'nvidia/llama-3.3-nemotron-super-49b-v1';

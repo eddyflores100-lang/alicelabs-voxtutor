@@ -10,7 +10,7 @@
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-0a0a0a?logo=nextdotjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
-![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deploy-Vercel-000?logo=vercel&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-34d399)
 
 </div>
@@ -25,7 +25,8 @@
 
 - **Voz de punta a punta** — habla con el micro (Web Speech API) y el tutor te responde hablando (TTS). Sin teclado.
 - **Correcciones en vivo, sin romper la conversación** — detecta tus errores gramaticales y los explica en español, uno por turno, de forma amable.
-- **Memoria persistente** — cada dato que descubre de ti (objetivo, trabajo, intereses, errores comunes) se guarda en base de datos y se inyecta en las siguientes sesiones.
+- **Memoria persistente** — cada dato que descubre de ti (objetivo, trabajo, intereses, errores comunes) se guarda en el almacén persistente (Vercel Edge Config en producción) y se inyecta en las siguientes sesiones.
+- **Memoria por navegador, aislada** — cada navegador tiene su propio espacio de memoria (id anónimo en `localStorage`): nadie más ve tus datos, y al borrar el storage empiezas de cero.
 - **Método CEFR** — ajusta su vocabulario a tu nivel y reintroduce tus errores comunes en contexto para que los fijes.
 - **Provider-agnostic** — diseñado para correr con **NVIDIA Nemotron** servido en **Nebius Token Factory**; incluye fallback de demo sin claves.
 
@@ -39,7 +40,7 @@ API /api/chat ──► LLM (Nemotron en Nebius) ──► JSON estructurado
         │         ó tutor heurístico local            │ reply
         ▼                                             │ corrections
 Vercel Edge Config                                    │ memoryUpdates
-(memoria persistente global) ◄────────────────────────┘
+(memoria persistente por navegador) ◄────────────────────────┘
 ```
 
 El tutor responde **exclusivamente JSON** (`reply` + `corrections[]` + `memoryUpdates[]`), lo que mantiene la UI estable y la memoria limpia. Sin `NEBIUS_API_KEY` corre un tutor heurístico local (badge "Modo demo básico").
@@ -47,7 +48,7 @@ El tutor responde **exclusivamente JSON** (`reply` + `corrections[]` + `memoryUp
 ## 🚀 Correr en local
 
 ```bash
-# 1. Instalar dependencias
+# 1. Instalar dependencias (Node 20+)
 npm install
 
 # 2. Configurar entorno (opcional)
@@ -56,9 +57,10 @@ cp .env.example .env
 # 3. Levantar
 npm run dev
 # → http://localhost:3000
+```
 
 Sin configuración extra, la memoria corre en modo local (se reinicia al parar el server).
-Para memoria persistente: `EDGE_CONFIG_ID`, `EDGE_CONFIG_TOKEN`, `EDGE_CONFIG_TEAM_ID` (Vercel).```
+Para memoria persistente: `EDGE_CONFIG_ID`, `EDGE_CONFIG_TOKEN`, `EDGE_CONFIG_TEAM_ID` (Vercel).
 
 ### Modo producción (Nemotron en Nebius)
 
@@ -69,7 +71,7 @@ Para memoria persistente: `EDGE_CONFIG_ID`, `EDGE_CONFIG_TOKEN`, `EDGE_CONFIG_TE
 NEBIUS_API_KEY=tu_api_key_aqui
 ```
 
-Sin esa clave, la app corre en **modo demo** con un proveedor LLM integrado — útil para probar la UI y la memoria.
+Sin esa clave, la app corre en **modo demo** con un tutor heurístico local (sin LLM externo, sin claves): detecta nombre y objetivo, corrige errores comunes de hispanohablantes y mantiene memoria. Cualquiera que clone el repo puede probarlo de inmediato.
 
 > ⚠️ Para usar el micrófono se necesita **Chrome o Edge** y servir la app sobre `localhost` o HTTPS.
 
