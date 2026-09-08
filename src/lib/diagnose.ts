@@ -82,7 +82,7 @@ export async function diagnose(memory: MemoryEntry[], history: StoredMessage[]):
         .map((m) => `${m.role === 'tutor' ? 'TUTOR' : 'ESTUDIANTE'}: ${m.content}`)
         .join('\n');
       const mem = memory.map((m) => `- ${m.key}: ${m.value}`).join('\n') || '(vacía)';
-      const raw = await nebiusChat(
+      const { text: raw } = await nebiusChat(
         [
           { role: 'system', content: DEEP_SYSTEM },
           { role: 'user', content: `MEMORIA:\n${mem}\n\nTRANSCRIPCIÓN RECIENTE:\n${transcript || '(aún no hay turnos)'}` },

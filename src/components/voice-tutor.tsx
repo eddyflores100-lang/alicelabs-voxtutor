@@ -53,9 +53,11 @@ export default function VoiceTutor() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceURI, setVoiceURI] = useState('');
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [speechStats, setSpeechStats] = useState({ words: 0, seconds: 0, fillers: 0 });
 
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const listenStartRef = useRef(0);
 
   const refreshMemory = useCallback(async () => {
     try {
@@ -295,6 +297,7 @@ export default function VoiceTutor() {
     rec.lang = voices.find((v) => v.voiceURI === voiceURI)?.lang ?? 'en-US';
     rec.continuous = false;
     rec.interimResults = true;
+    listenStartRef.current = Date.now();
     rec.onresult = (e) => {
       let final = '';
       let partial = '';
@@ -304,7 +307,14 @@ export default function VoiceTutor() {
         else partial += r[0].transcript;
       }
       setInterim(final || partial);
-      if (final) send(final);
+      if (final) {
+        // Métricas de habla: palabras, segundos hablados y muletillas detectadas
+        const secs = listenStartRef.current ? Math.max(1, Math.round((Date.now() - listenStartRef.current) / 1000)) : 0;
+        const words = final.split(/\s+/).filter(Boolean).length;
+        const fillers = (final.toLowerCase().match(/\b(uh+|um+|erm+|err+|hmm+|like|you know|i mean|sort of|kind of|basically|actually|literally)\b/g) ?? []).length;
+        setSpeechStats((s) => ({ words: s.words + words, seconds: s.seconds + secs, fillers: s.fillers + fillers }));
+        send(final);
+      }
     };
     rec.onerror = (e) => {
       if (e.error === 'not-allowed') setMicSupported(false);
@@ -329,6 +339,7 @@ export default function VoiceTutor() {
   const wordsSpoken = messages.filter((m) => m.role === 'user').reduce((n, m) => n + m.text.split(/\s+/).filter(Boolean).length, 0);
   const correctionsTotal = messages.reduce((n, m) => n + (m.corrections?.length ?? 0), 0);
   const selectedVoice = voices.find((v) => v.voiceURI === voiceURI);
+  const wpm = speechStats.seconds > 0 ? Math.round(speechStats.words / (speechStats.seconds / 60)) : 0;
   const errorsList = (memory.find((m) => m.key === 'common_errors')?.value ?? '')
     .split(';')
     .map((s) => s.trim())
@@ -495,7 +506,19 @@ export default function VoiceTutor() {
         <div className="max-w-3xl mx-auto space-y-3">
           {messages.map((m, i) => (
             <div key={i} className="space-y-2">
-              <div className={`px-4 py-3 text-[15px] leading-relaxed ${t(m)}`}>{m.text}</div>
+              <div className={`flex items-center gap-1 ${m.role === 'tutor' ? '' : 'justify-end'}`}>
+                {m.role === 'tutor' && (
+                  <button
+                    onClick={() => speak(m.text)}
+                    aria-label="Escuchar otra vez"
+                    title="Escuchar otra vez"
+                    className="p-1 rounded-md text-zinc-600 hover:text-emerald-400 transition-colors shrink-0"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <div className={`px-4 py-3 text-[15px] leading-relaxed ${t(m)}`}>{m.text}</div>
+              </div>
               {m.corrections?.map((c, k) => (
                 <Card key={k} className="mr-auto max-w-[85%] bg-amber-950/40 border-amber-500/30">
                   <CardContent className="p-3 text-sm space-y-1 flex items-start gap-2">
@@ -640,21 +663,29 @@ export default function VoiceTutor() {
 
             <div className="p-4 space-y-4">
               {/* Métricas de sesión */}
-              <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
                 {[
                   { v: messages.filter((m) => m.role === 'user').length, l: 'Turnos' },
                   { v: wordsSpoken, l: 'Palabras' },
                   { v: correctionsTotal, l: 'Correcciones' },
+                  { v: wpm > 0 ? wpm : '—', l: 'Palabras/min', sub: 'voz' },
+                  { v: speechStats.fillers, l: 'Muletillas', warn: speechStats.fillers >= 3 },
                   { v: streak, l: 'Racha (días)', flame: true },
                 ].map((s) => (
                   <div key={s.l} className="bg-zinc-800/60 rounded-xl py-3 px-1">
-                    <p className={`text-lg font-bold ${s.flame && s.v > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>
+                    <p className={`text-lg font-bold ${s.flame && Number(s.v) > 0 ? 'text-orange-400' : s.warn ? 'text-amber-400' : 'text-emerald-400'}`}>
                       {s.flame ? <span className="inline-flex items-center gap-0.5"><Flame className="w-4 h-4" />{s.v}</span> : s.v}
                     </p>
-                    <p className="text-[10px] text-zinc-500 leading-tight">{s.l}</p>
+                    <p className="text-[10px] text-zinc-500 leading-tight">{s.l}{s.sub ? ` (${s.sub})` : ''}</p>
                   </div>
                 ))}
               </div>
+              {(wpm > 0 || speechStats.fillers > 0) && (
+                <p className="text-[11px] text-zinc-500 px-1">
+                  {wpm > 0 && <>Ritmo ~{wpm} palabras/min — conversación natural: 100–150. </>}
+                  {speechStats.fillers >= 3 && <>Suaviza las muletillas (uh, um, like, you know…): {speechStats.fillers} detectadas.</>}
+                </p>
+              )}
 
               {/* CEFR */}
               <div className="bg-zinc-800/40 border border-zinc-800 rounded-xl p-3 space-y-2">

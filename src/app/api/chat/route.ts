@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadState, createSession, newSessionId, saveTurn } from '@/lib/store';
-import { nebiusAvailable, nebiusChat } from '@/lib/llm';
+import { nebiusAvailable, nebiusChat, NEBIUS_MODEL_FAST, NEBIUS_MODEL_DEEP, type ChatMsg } from '@/lib/llm';
 import { tutorSystemPrompt, type PromptScenario } from '@/lib/tutor';
 import { localTutorTurn, isScenario, type Scenario } from '@/lib/tutor-local';
 import { tavilyAvailable, tavilySearch, extractEntity, buildQuery } from '@/lib/tavily';
 
 export const runtime = 'nodejs';
+
+// Rate limit simple por sesión: protege Edge Config y créditos de Token Factory.
+// 30 mensajes/minuto por sid (generoso para uso real; frena abuso y loops).
+const RATE_LIMIT = 30;
+const RATE_WINDOW_MS = 60_000;
+function rateLimited(sid: string): boolean {
+  const hits = ((globalThis as { __vtHits?: Map<string, number[]> }).__vtHits ??= new Map<string, number[]>());
+  const now = Date.now();
+  const arr = (hits.get(sid) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (arr.length >= RATE_LIMIT) return true;
+  arr.push(now);
+  hits.set(sid, arr);
+  return false;
+}
 
 const KICKOFF_INSTRUCTION =
   '(El estudiante acaba de abrir la app. Salúdalo en inglés simple, preséntate en una frase y pregúntale su nombre y para qué quiere mejorar su inglés.)';
@@ -39,6 +53,13 @@ export async function POST(req: NextRequest) {
     const isScenarioSwitch = text?.trim() === '[scenario]';
     if (!isKickoff && !isScenarioSwitch && !text?.trim())
       return NextResponse.json({ error: 'text requerido' }, { status: 400 });
+
+    const limiterKey = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : 'anon';
+    if (rateLimited(limiterKey))
+      return NextResponse.json(
+        { error: 'Demasiados mensajes — espera un minuto. / Too many messages — please wait a minute.' },
+        { status: 429 }
+      );
 
     const sc: Scenario = isScenario(scenario) ? scenario : 'free';
 
@@ -87,25 +108,37 @@ export async function POST(req: NextRequest) {
       memoryUpdates: Array<{ key: string; value: string }>;
     };
     let mode: 'nebius' | 'local' = 'local';
+    let usedModel: string | undefined;
 
     if (nebiusAvailable()) {
-      mode = 'nebius';
       let userContent: string;
       if (isKickoff) userContent = KICKOFF_INSTRUCTION;
       else if (isScenarioSwitch) userContent = scenarioInstructionFor(sc);
       else userContent = text;
 
-      const raw = await nebiusChat([
+      const msgs: ChatMsg[] = [
         { role: 'system', content: tutorSystemPrompt(state.memory, sc as PromptScenario, webContext) },
         ...state.history.map((m) => ({
           role: m.role === 'tutor' ? ('assistant' as const) : ('user' as const),
           content: m.content,
         })),
         { role: 'user', content: userContent },
-      ]);
-      parsed =
-        safeParse<{ reply: string; corrections: Array<{ wrong: string; right: string; note: string }>; memoryUpdates: Array<{ key: string; value: string }> }>(raw) ??
-        { reply: raw.trim(), corrections: [], memoryUpdates: [] };
+      ];
+
+      try {
+        mode = 'nebius';
+        const { text: raw, model } = await nebiusChat(msgs);
+        usedModel = model;
+        parsed =
+          safeParse<{ reply: string; corrections: Array<{ wrong: string; right: string; note: string }>; memoryUpdates: Array<{ key: string; value: string }> }>(raw) ??
+          { reply: raw.trim(), corrections: [], memoryUpdates: [] };
+      } catch (e) {
+        // Degradación elegante: si Token Factory falla (red, cuota, modelo),
+        // el tutor heurístico responde y el usuario nunca ve un error.
+        console.error('[chat] nebius falló, uso tutor local:', e);
+        mode = 'local';
+        parsed = localTutorTurn(isKickoff ? '[start]' : isScenarioSwitch ? '[scenario]' : text, state.memory, state.stage, sc);
+      }
     } else {
       parsed = localTutorTurn(isKickoff ? '[start]' : isScenarioSwitch ? '[scenario]' : text, state.memory, state.stage, sc);
     }
@@ -125,7 +158,7 @@ export async function POST(req: NextRequest) {
       meta: { scenario: sc, streak, ...(tavilyCache ? { tavily: tavilyCache } : {}) },
     });
 
-    return NextResponse.json({ sessionId: id, reply: parsed.reply, corrections: parsed.corrections, mode, scenario: sc, streak });
+    return NextResponse.json({ sessionId: id, reply: parsed.reply, corrections: parsed.corrections, mode, model: usedModel, scenario: sc, streak });
   } catch (e) {
     console.error('[chat]', e);
     return NextResponse.json({ error: 'Error del tutor', detail: String(e) }, { status: 500 });

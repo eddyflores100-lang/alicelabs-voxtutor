@@ -24,6 +24,14 @@
 
 Most language apps start from zero every single day. VoxTutor doesn't: the persistent student profile is a first-class part of the product, not a session artifact.
 
+## 📸 Screenshots
+
+| Voice picker & corrections | CEFR progress panel |
+|---|---|
+| ![VoxTutor voice picker](docs/screenshot-voices.png) | ![VoxTutor progress](docs/screenshot-progress.png) |
+
+*Every English voice installed in the browser is switchable with one tap (preview included) — and the CEFR panel tracks your level, streaks, speaking pace (WPM), filler-word count and 4-week roadmap.*
+
 ## ✨ What makes it different
 
 - **End-to-end voice** — speak with your mic (Web Speech API: `SpeechRecognition`) and the tutor answers out loud (`speechSynthesis` TTS), with a **switchable voice picker** (every English voice installed in the browser, grouped by accent — US/UK/AU/IN — with one-tap preview, and the mic follows the selected accent), adjustable speaking speed (0.8× beginner / 1× / 1.2× challenge), replay-audio on every correction, and a live audio-wave visualizer. A text-input fallback keeps the app usable in browsers without speech support.
@@ -42,8 +50,10 @@ This project makes a **runtime call to the Nebius Token Factory inference API**,
 
 | Layer | Model (default) | Purpose |
 |---|---|---|
-| **Fast Voice Layer** | `nvidia/llama-3.3-nemotron-super-49b-v1` | Every voice turn — low latency so the conversation feels live |
-| **Deep Diagnostic Layer** | `nvidia/llama-3.1-nemotron-ultra-253b-v1` | On-demand CEFR diagnosis: deep reasoning over the full session history |
+| **Fast Voice Layer** | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (30B total / **3B active**, 262K ctx) | Every voice turn — MoE with 3B active parameters keeps replies fast and credits long |
+| **Deep Diagnostic Layer** | `nvidia/Nemotron-3-Ultra-550b-a55b` (550B total / 55B active, 256K ctx) | On-demand CEFR diagnosis: flagship reasoning over the full session history |
+
+This is the exact routing the **Best Apps and Agents track** recommends: *"let Nano or Super handle the fast, everyday calls... Reach for Nemotron 3 Ultra when you need serious reasoning."* Both layers are overridable via `NEBIUS_MODEL_FAST` / `NEBIUS_MODEL_DEEP`, and if a primary model is unavailable the API client retries once with the legacy `llama-3.3-nemotron-super-49b` / `llama-3.1-nemotron-ultra-253b` models before degrading to the local heuristic tutor — **the chat never goes down.**
 
 - **Endpoint:** `POST https://api.tokenfactory.nebius.com/v1/chat/completions`
 - **Integration:** [`src/lib/llm.ts`](src/lib/llm.ts) — plain `fetch` call with `NEBIUS_API_KEY` auth; both models are overridable via `NEBIUS_MODEL_FAST` / `NEBIUS_MODEL_DEEP`
