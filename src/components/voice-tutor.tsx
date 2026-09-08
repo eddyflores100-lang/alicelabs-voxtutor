@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Mic, MicOff, Send, BrainCircuit, Volume2, VolumeX, Briefcase, Plane, Laptop,
-  MessageCircle, X, Flame, Download, Sparkles, RefreshCw,
+  MessageCircle, X, Flame, Download, Sparkles, RefreshCw, AudioLines, Check,
 } from 'lucide-react';
 import type { SpeechRecognitionLike } from '@/types/speech';
 
@@ -50,6 +50,9 @@ export default function VoiceTutor() {
   const [showProgress, setShowProgress] = useState(false);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceURI, setVoiceURI] = useState('');
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -71,15 +74,46 @@ export default function VoiceTutor() {
       if (typeof window === 'undefined' || !window.speechSynthesis) return;
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-US';
+      const v = voiceURI ? window.speechSynthesis.getVoices().find((x) => x.voiceURI === voiceURI) : null;
+      if (v) {
+        u.voice = v;
+        u.lang = v.lang;
+      } else {
+        u.lang = 'en-US';
+      }
       u.rate = speed;
       u.onstart = () => setSpeaking(true);
       u.onend = () => setSpeaking(false);
       u.onerror = () => setSpeaking(false);
       window.speechSynthesis.speak(u);
     },
-    [speed]
+    [speed, voiceURI]
   );
+
+  // Enumerar voces del navegador (Chrome las carga de forma asíncrona); prioriza inglés
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const load = () => {
+      const all = window.speechSynthesis.getVoices();
+      const en = all.filter((v) => /^en([-_]|$)/i.test(v.lang));
+      setVoices(en.length ? en : all.slice(0, 30));
+    };
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    const timer = setTimeout(load, 400);
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', load);
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Cerrar el panel de voces al hacer click fuera
+  useEffect(() => {
+    if (!voiceOpen) return;
+    const close = () => setVoiceOpen(false);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [voiceOpen]);
 
   const send = useCallback(
     async (text: string, sidOverride?: string, scenarioOverride?: Scenario) => {
@@ -142,6 +176,9 @@ export default function VoiceTutor() {
       const sp = Number(localStorage.getItem('voxtutor_speed'));
       if (SPEEDS.includes(sp as 0.8 | 1 | 1.2)) setSpeed(sp);
     } catch {}
+    try {
+      setVoiceURI(localStorage.getItem('voxtutor_voice') ?? '');
+    } catch {}
     setScenario(storedScenario);
     setSessionId(sid);
     send('[start]', sid, storedScenario);
@@ -166,6 +203,33 @@ export default function VoiceTutor() {
     try {
       localStorage.setItem('voxtutor_speed', String(sp));
     } catch {}
+  };
+
+  // Habla una frase de prueba con una voz concreta (preview del selector)
+  const preview = (uri: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance("Hi! I'm your English tutor. Let's practice together.");
+    const v = uri ? window.speechSynthesis.getVoices().find((x) => x.voiceURI === uri) : null;
+    if (v) {
+      u.voice = v;
+      u.lang = v.lang;
+    } else {
+      u.lang = 'en-US';
+    }
+    u.rate = speed;
+    u.onstart = () => setSpeaking(true);
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(u);
+  };
+
+  const pickVoice = (uri: string) => {
+    setVoiceURI(uri);
+    try {
+      localStorage.setItem('voxtutor_voice', uri);
+    } catch {}
+    preview(uri);
   };
 
   const generateDiagnosis = async () => {
@@ -227,7 +291,8 @@ export default function VoiceTutor() {
       return;
     }
     const rec = new SR();
-    rec.lang = 'en-US';
+    // El reconocimiento sigue el acento de la voz elegida (en-US, en-GB, en-AU…)
+    rec.lang = voices.find((v) => v.voiceURI === voiceURI)?.lang ?? 'en-US';
     rec.continuous = false;
     rec.interimResults = true;
     rec.onresult = (e) => {
@@ -263,6 +328,7 @@ export default function VoiceTutor() {
 
   const wordsSpoken = messages.filter((m) => m.role === 'user').reduce((n, m) => n + m.text.split(/\s+/).filter(Boolean).length, 0);
   const correctionsTotal = messages.reduce((n, m) => n + (m.corrections?.length ?? 0), 0);
+  const selectedVoice = voices.find((v) => v.voiceURI === voiceURI);
   const errorsList = (memory.find((m) => m.key === 'common_errors')?.value ?? '')
     .split(';')
     .map((s) => s.trim())
@@ -290,6 +356,74 @@ export default function VoiceTutor() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Selector de voz del tutor */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setVoiceOpen((o) => !o);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2 py-1.5 text-xs text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 transition-colors"
+              aria-haspopup="listbox"
+              aria-expanded={voiceOpen}
+              title={selectedVoice ? `Voz: ${selectedVoice.name} (${selectedVoice.lang})` : 'Elegir voz del tutor'}
+            >
+              <AudioLines className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline max-w-[14ch] truncate">{selectedVoice ? selectedVoice.name : 'Voz'}</span>
+            </button>
+            {voiceOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 w-72 max-h-80 overflow-y-auto bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50"
+                role="listbox"
+                aria-label="Voz del tutor"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="sticky top-0 bg-zinc-900 border-b border-zinc-800 px-3 py-2 text-[11px] text-zinc-500">
+                  Voz del tutor · {voices.length} en inglés
+                </p>
+                <button
+                  role="option"
+                  aria-selected={!voiceURI}
+                  onClick={() => pickVoice('')}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-zinc-800/60 ${!voiceURI ? 'text-emerald-300' : 'text-zinc-300'}`}
+                >
+                  <span>Voz del sistema (por defecto)</span>
+                  {!voiceURI && <Check className="w-3.5 h-3.5 shrink-0" />}
+                </button>
+                {voices.map((v) => (
+                  <div key={v.voiceURI} className="flex items-center gap-1 px-3 py-1.5 hover:bg-zinc-800/60">
+                    <button
+                      role="option"
+                      aria-selected={voiceURI === v.voiceURI}
+                      onClick={() => pickVoice(v.voiceURI)}
+                      className={`flex-1 min-w-0 text-left ${voiceURI === v.voiceURI ? 'text-emerald-300' : 'text-zinc-300'}`}
+                    >
+                      <span className="block text-xs truncate">{v.name}</span>
+                      <span className="block text-[10px] text-zinc-500">
+                        {v.lang.replace('_', '-')}
+                        {v.localService ? ' · sin conexión' : ' · red'}
+                        {voiceURI === v.voiceURI ? ' · activa' : ''}
+                      </span>
+                    </button>
+                    {voiceURI === v.voiceURI && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                    <button
+                      onClick={() => preview(v.voiceURI)}
+                      aria-label={`Probar la voz ${v.name}`}
+                      title="Probar voz"
+                      className="p-1 rounded-md text-zinc-500 hover:text-emerald-300 hover:bg-zinc-800 shrink-0"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {voices.length === 0 && (
+                  <p className="px-3 py-4 text-xs text-zinc-500">
+                    Tu navegador aún no reporta voces. Prueba en Chrome/Edge de escritorio o recarga la página.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
           {/* Velocidad del tutor */}
           <div className="hidden sm:flex items-center rounded-lg border border-zinc-800 overflow-hidden" role="group" aria-label="Velocidad del tutor">
             {SPEEDS.map((sp) => (

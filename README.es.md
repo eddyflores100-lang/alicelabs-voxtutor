@@ -21,7 +21,7 @@
 
 ## ✨ Qué lo hace distinto
 
-- **Voz de punta a punta** — habla con el micro (Web Speech API) y el tutor te responde hablando (TTS). Sin teclado.
+- **Voz de punta a punta** — habla con el micro (Web Speech API) y el tutor te responde hablando (TTS). Selector de **voces intercambiables** (todas las voces en inglés de tu navegador, con preview y acento US/UK/AU), velocidad ajustable (0.8×/1×/1.2×) y re-escucha en cada corrección. Sin teclado.
 - **Correcciones en vivo, sin romper la conversación** — detecta tus errores gramaticales y los explica en español, uno por turno, de forma amable.
 - **Memoria persistente** — cada dato que descubre de ti (objetivo, trabajo, intereses, errores comunes) se guarda en el almacén persistente (Vercel Edge Config en producción) y se inyecta en las siguientes sesiones.
 - **Memoria por navegador, aislada** — cada navegador tiene su propio espacio de memoria (id anónimo en `localStorage`): nadie más ve tus datos, y al borrar el storage empiezas de cero.
