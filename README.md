@@ -36,13 +36,13 @@ Navegador (voz: ASR/TTS nativo)
         │  texto
         ▼
 API /api/chat ──► LLM (Nemotron en Nebius) ──► JSON estructurado
-        │              con memoria del estudiante      │ reply
-        ▼                                              │ corrections
-Prisma + SQLite                                        │ memoryUpdates
-(Sessions · Messages · Memory) ◄───────────────────────┘
+        │         ó tutor heurístico local            │ reply
+        ▼                                             │ corrections
+Vercel Edge Config                                    │ memoryUpdates
+(memoria persistente global) ◄────────────────────────┘
 ```
 
-El modelo responde **exclusivamente JSON** (`reply` + `corrections[]` + `memoryUpdates[]`), lo que mantiene la UI estable y la memoria limpia.
+El tutor responde **exclusivamente JSON** (`reply` + `corrections[]` + `memoryUpdates[]`), lo que mantiene la UI estable y la memoria limpia. Sin `NEBIUS_API_KEY` corre un tutor heurístico local (badge "Modo demo básico").
 
 ## 🚀 Correr en local
 
@@ -50,16 +50,15 @@ El modelo responde **exclusivamente JSON** (`reply` + `corrections[]` + `memoryU
 # 1. Instalar dependencias
 npm install
 
-# 2. Configurar entorno
+# 2. Configurar entorno (opcional)
 cp .env.example .env
 
-# 3. Crear la base de datos
-npx prisma db push
-
-# 4. Levantar
+# 3. Levantar
 npm run dev
 # → http://localhost:3000
-```
+
+Sin configuración extra, la memoria corre en modo local (se reinicia al parar el server).
+Para memoria persistente: `EDGE_CONFIG_ID`, `EDGE_CONFIG_TOKEN`, `EDGE_CONFIG_TEAM_ID` (Vercel).```
 
 ### Modo producción (Nemotron en Nebius)
 
@@ -84,11 +83,14 @@ src/
 │   └── layout.tsx           # Metadata AliceLabs
 ├── components/voice-tutor.tsx  # UI completa (voz, chat, memoria)
 ├── lib/
-│   ├── llm.ts               # Capa LLM provider-agnostic (Nebius + fallback)
+│   ├── llm.ts               # Nebius Nemotron (producción con API key)
+│   ├── tutor-local.ts       # Tutor heurístico local (sin API key)
+│   ├── store.ts             # Almacenamiento: Edge Config / in-memory
 │   └── tutor.ts             # System prompt + método de enseñanza
 └── types/speech.ts          # Tipado Web Speech API
-prisma/schema.prisma         # Session · Message · Memory
 ```
+
+**Deploy en Vercel:** https://alicelabs-voxtutor.vercel.app (demo en modo heurístico).
 
 ## 🏆 Contexto
 
