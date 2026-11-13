@@ -59,10 +59,11 @@ export default function VoiceTutor() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const listenStartRef = useRef(0);
 
-  const refreshMemory = useCallback(async () => {
+  const refreshMemory = useCallback(async (sidOverride?: string) => {
     try {
-      const sid = typeof window !== 'undefined' ? localStorage.getItem('voxtutor_sid') ?? '' : '';
-      const r = await fetch(`/api/memory?sessionId=${encodeURIComponent(sid)}`);
+      const sid = sidOverride ?? (typeof window !== 'undefined' ? localStorage.getItem('voxtutor_sid') ?? '' : '');
+      if (!sid) return;
+      const r = await fetch(`/api/memory?sessionId=${encodeURIComponent(sid)}`, { cache: 'no-store' });
       const j = await r.json();
       setMemory(j.memory ?? []);
       setStreak(j.streak ?? 0);
@@ -135,14 +136,18 @@ export default function VoiceTutor() {
             scenario: scenarioOverride ?? scenario,
           }),
         });
+        if (!res.ok) throw new Error('No se pudo completar el turno');
         const j = await res.json();
-        if (j.sessionId) setSessionId(j.sessionId);
+        if (typeof j.sessionId === 'string' && /^[a-zA-Z0-9_-]{6,64}$/.test(j.sessionId)) {
+          setSessionId(j.sessionId);
+          try { localStorage.setItem('voxtutor_sid', j.sessionId); } catch {}
+        }
         const corrections: Correction[] = j.corrections ?? [];
         setMessages((m) => [...m, { role: 'tutor', text: j.reply ?? '…', corrections }]);
         setDemoMode(j.mode === 'local');
         if (typeof j.streak === 'number') setStreak(j.streak);
         if (autoSpeak && j.reply) speak(j.reply);
-        refreshMemory();
+        refreshMemory(typeof j.sessionId === 'string' ? j.sessionId : undefined);
       } catch {
         setMessages((m) => [...m, { role: 'tutor', text: 'Hubo un error de conexión. Intenta de nuevo.' }]);
       } finally {
@@ -160,14 +165,13 @@ export default function VoiceTutor() {
       sid = localStorage.getItem('voxtutor_sid') ?? '';
     } catch {}
     if (!/^[a-zA-Z0-9_-]{6,64}$/.test(sid)) {
-      sid =
-        'vt_' +
-        (typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
-      try {
-        localStorage.setItem('voxtutor_sid', sid);
-      } catch {}
+      sid = '';
+      if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(24);
+        crypto.getRandomValues(bytes);
+        sid = `vt_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+        try { localStorage.setItem('voxtutor_sid', sid); } catch {}
+      }
     }
     let storedScenario: Scenario = 'free';
     try {
@@ -176,6 +180,7 @@ export default function VoiceTutor() {
     } catch {}
     try {
       const sp = Number(localStorage.getItem('voxtutor_speed'));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore a saved preference after mount; localStorage is unavailable during SSR.
       if (SPEEDS.includes(sp as 0.8 | 1 | 1.2)) setSpeed(sp);
     } catch {}
     try {
@@ -184,7 +189,6 @@ export default function VoiceTutor() {
     setScenario(storedScenario);
     setSessionId(sid);
     send('[start]', sid, storedScenario);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -354,7 +358,6 @@ export default function VoiceTutor() {
       {/* Header */}
       <header className="border-b border-zinc-800/80 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="AliceLabs" className="w-9 h-9 rounded-xl shrink-0" />
           <div className="min-w-0">
             <h1 className="font-bold leading-tight">

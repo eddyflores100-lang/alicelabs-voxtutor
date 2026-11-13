@@ -12,7 +12,6 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center space-y-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="AliceLabs" className="w-12 h-12 rounded-xl mx-auto" />
         <h1 className="font-bold text-lg">Algo se rompió — pero tu progreso está a salvo</h1>
         <p className="text-sm text-zinc-400">
