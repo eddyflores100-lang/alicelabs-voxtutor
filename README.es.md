@@ -10,6 +10,7 @@
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-0a0a0a?logo=nextdotjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+[![CI](https://github.com/eddyflores100-lang/alicelabs-voxtutor/actions/workflows/ci.yml/badge.svg)](https://github.com/eddyflores100-lang/alicelabs-voxtutor/actions/workflows/ci.yml)
 ![Vercel](https://img.shields.io/badge/Deploy-Vercel-000?logo=vercel&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-34d399)
 
@@ -24,7 +25,7 @@
 - **Voz de punta a punta** — habla con el micro (Web Speech API) y el tutor te responde hablando (TTS). Selector de **voces intercambiables** (todas las voces en inglés de tu navegador, con preview y acento US/UK/AU), velocidad ajustable (0.8×/1×/1.2×) y re-escucha en cada corrección. Sin teclado.
 - **Correcciones en vivo, sin romper la conversación** — detecta tus errores gramaticales y los explica en español, uno por turno, de forma amable.
 - **Memoria persistente** — cada dato que descubre de ti (objetivo, trabajo, intereses, errores comunes) se guarda en el almacén persistente (Vercel Edge Config en producción) y se inyecta en las siguientes sesiones.
-- **Memoria por navegador, aislada** — cada navegador tiene su propio espacio de memoria (id anónimo en `localStorage`): nadie más ve tus datos, y al borrar el storage empiezas de cero.
+- **Memoria por sesión de navegador** — se utiliza un identificador aleatorio de alta entropía en `localStorage`. Es un identificador tipo bearer, no una autenticación de cuenta: quien lo obtenga podría acceder a esa sesión. No guardes información sensible o altamente personal.
 - **Método CEFR** — ajusta su vocabulario a tu nivel y reintroduce tus errores comunes en contexto para que los fijes.
 - **Provider-agnostic** — diseñado para correr con **NVIDIA Nemotron** servido en **Nebius Token Factory**; incluye fallback de demo sin claves.
 
@@ -92,10 +93,14 @@ src/
 
 **Deploy en Vercel:** https://alicelabs-voxtutor.vercel.app (demo en modo heurístico).
 
+## Seguridad y privacidad
+
+La memoria se separa por identificador de sesión; no existe autenticación de cuenta en este prototipo. La persistencia Edge Config requiere credenciales únicamente en el servidor. Revisa el [modelo de seguridad](docs/SECURITY_MODEL.md), la [política de reporte](SECURITY.md) y la [guía de contribución](CONTRIBUTING.md).
+
 ## 📄 Licencia
 
 [MIT](LICENSE) © 2026 AliceLabs
 
 ---
 
-🌐 *Documentación en otros idiomas:* [Español](README.es.md)
+🌐 *Documentación:* [English](README.md) · [Modelo de seguridad](docs/SECURITY_MODEL.md) · [Contribuir](CONTRIBUTING.md)
