@@ -40,7 +40,7 @@ Most language apps start from zero every single day. VoxTutor doesn't: the persi
 - **Deep CEFR diagnosis (multi-model routing)** — everyday voice turns run on a fast model; a "CEFR Diagnosis" button sends the full session history to a deep reasoning model that classifies the CEFR level, extracts recurring error patterns and builds a 4-week personalized study roadmap.
 - **Progress panel & exportable study note** — live CEFR level, session metrics (turns, words, corrections, practice streak), interactive error list with "Practice this error now" buttons, and a one-click Markdown study-note export for offline review.
 - **Real-world context via Tavily Search** — when the student mentions a real company ("an interview at Amazon") or a real city ("traveling to London"), VoxTutor performs a **live web search with the Tavily API** and injects current, real-world facts into the tutor's context, so practice uses today's reality instead of generic examples.
-- **Persistent, per-browser memory** — everything the tutor learns (name, goal, interests, common errors) is stored server-side (Vercel Edge Config in production) and re-injected into future sessions. Each browser gets an anonymous session id in `localStorage`, so different users never see each other's data — clear your storage and you start fresh.
+- **Persistent, per-browser memory** — everything the tutor learns (name, goal, interests, common errors) is stored server-side (Vercel Edge Config in production) and re-injected into future sessions. Each browser gets a high-entropy session identifier in `localStorage`. It acts as a bearer identifier, not account authentication; anyone who obtains it may be able to access that session. Do not store sensitive or highly personal information.
 - **CEFR-aware teaching method** — the tutor adapts its vocabulary to the student's level and deliberately reintroduces past mistakes in new contexts.
 - **Provider-agnostic LLM layer** — built to run on **NVIDIA Nemotron** served by **Nebius Token Factory**, with an offline heuristic tutor as a zero-key fallback so anyone can clone and run the demo instantly.
 
@@ -153,10 +153,14 @@ Built by **AliceLabs** for the *Nebius x NVIDIA Global AI Hackathon* — *Best A
 - **Live demo:** https://alicelabs-voxtutor.vercel.app
 - **Repository:** https://github.com/eddyflores100-lang/alicelabs-voxtutor
 
+## Security and privacy
+
+Session memory is scoped by a cryptographically generated browser identifier. It is not an account system or a guarantee of identity verification. The local fallback is process memory; Edge Config persistence requires server-side credentials. See [the security model](docs/SECURITY_MODEL.md) and [SECURITY.md](SECURITY.md).
+
 ## 📄 License
 
 [MIT](LICENSE) © 2026 AliceLabs
 
 ---
 
-🌐 *Other languages:* [Español](README.es.md)
+🌐 *Other languages:* [Español](README.es.md) · [Security model](docs/SECURITY_MODEL.md) · [Contributing](CONTRIBUTING.md)
