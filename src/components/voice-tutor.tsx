@@ -180,6 +180,7 @@ export default function VoiceTutor() {
     } catch {}
     try {
       const sp = Number(localStorage.getItem('voxtutor_speed'));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore a saved preference after mount; localStorage is unavailable during SSR.
       if (SPEEDS.includes(sp as 0.8 | 1 | 1.2)) setSpeed(sp);
     } catch {}
     try {
@@ -188,7 +189,6 @@ export default function VoiceTutor() {
     setScenario(storedScenario);
     setSessionId(sid);
     send('[start]', sid, storedScenario);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -358,7 +358,6 @@ export default function VoiceTutor() {
       {/* Header */}
       <header className="border-b border-zinc-800/80 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="AliceLabs" className="w-9 h-9 rounded-xl shrink-0" />
           <div className="min-w-0">
             <h1 className="font-bold leading-tight">
