@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
         // el tutor heurístico responde y el usuario nunca ve un error.
         console.error('[chat] nebius falló, uso tutor local:', e);
         mode = 'local';
-        parsed = localTutorTurn(isKickoff ? '[start]' : isScenarioSwitch ? '[scenario]' : text, state.memory, state.stage, sc);
+        parsed = localTutorTurn(isKickoff ? '[start]' : isScenarioSwitch ? '[scenario]' : cleanText, state.memory, state.stage, sc);
       }
     } else {
       parsed = localTutorTurn(isKickoff ? '[start]' : isScenarioSwitch ? '[scenario]' : text, state.memory, state.stage, sc);
