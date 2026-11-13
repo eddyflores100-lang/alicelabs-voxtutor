@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 /**
  * Capa de almacenamiento de VoxTutor para producción (Vercel).
  *
@@ -88,10 +90,14 @@ function sanitize(key: string): string {
 
 const SID_RE = /^[a-zA-Z0-9_-]{6,64}$/;
 
-/** Valida el sessionId que llega del cliente (id estable por navegador). */
+export function isValidSessionId(value: unknown): value is string {
+  return typeof value === 'string' && SID_RE.test(value.trim());
+}
+
+/** Valida el identificador opaco de sesión del navegador. */
 function sidOf(sessionId?: string): string | null {
   const s = (sessionId ?? '').trim();
-  return SID_RE.test(s) ? s : null;
+  return isValidSessionId(s) ? s : null;
 }
 
 function parseMsg(key: string, value: string): StoredMessage | null {
@@ -182,7 +188,7 @@ export async function loadState(sessionId?: string): Promise<TutorState> {
 /* ---------- Sesiones ---------- */
 
 export function newSessionId(): string {
-  return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  return `vt_${randomUUID().replace(/-/g, '')}`;
 }
 
 export async function createSession(id: string): Promise<void> {
